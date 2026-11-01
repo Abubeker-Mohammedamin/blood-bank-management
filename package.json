@@ -1,0 +1,17 @@
+{
+  "name": "blood-bank-management-system",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Blood Bank Management System",
+  "scripts": {
+    "dev": "concurrently -k -n client,server -c cyan,green \"npm run dev --prefix client\" \"npm run dev --prefix server\"",
+    "build": "npm run build --prefix client",
+    "start": "npm run start --prefix server",
+    "test": "npm run test --prefix server",
+    "test:postgres": "npm run test:postgres --prefix server",
+    "health": "node -e \"fetch('http://localhost:5000/api/health').then(r=>r.json()).then(console.log).catch(e=>{console.error(e);process.exit(1)})\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

@@ -1,0 +1,476 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                     String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                  String                       @db.VarChar(254)
+  passwordHash           String?                      @map("password_hash") @db.Text
+  displayName            String                       @map("display_name") @db.VarChar(120)
+  phoneE164              String?                      @map("phone_e164") @db.VarChar(16)
+  accountStatus          String                       @default("pending") @map("account_status") @db.VarChar(20)
+  createdAt              DateTime                     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  disabledAt             DateTime?                    @map("disabled_at") @db.Timestamptz(3)
+  roleAssignments        UserRole[]                   @relation("RoleAssignmentUser")
+  rolesAssigned          UserRole[]                   @relation("RoleAssignedBy")
+  rolesRevoked           UserRole[]                   @relation("RoleRevokedBy")
+  donorProfile           Donor?
+  staffProfile           Staff?
+  hospitalMemberships    HospitalUser[]
+  createdAppointments    Appointment[]                @relation("AppointmentCreatedBy")
+  bloodRequests          BloodRequest[]               @relation("BloodRequestCreatedBy")
+  reviewedBloodRequests  BloodRequest[]               @relation("BloodRequestReviewedBy")
+  requestStatusChanges   BloodRequestStatusHistory[]  @relation("BloodRequestStatusHistoryActor")
+  allocations            Allocation[]                 @relation("AllocationCreatedBy")
+  bloodDispatches        BloodDispatch[]              @relation("BloodDispatchDispatchedBy")
+  dispatchStatusChanges  BloodDispatchStatusHistory[] @relation("BloodDispatchStatusChangeActor")
+  compatibilityApprovals BloodCompatibilityApproval[] @relation("CompatibilityApprovalRecordedBy")
+  notifications          Notification[]
+  auditLogs              AuditLog[]
+
+  @@map("users")
+}
+
+model AuthSession {
+  sid    String   @id @db.VarChar(255)
+  sess   Json     @db.Json
+  expire DateTime @db.Timestamp(6)
+
+  @@index([expire])
+  @@map("user_sessions")
+}
+
+model Role {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String     @unique @db.VarChar(40)
+  name        String     @db.VarChar(80)
+  description String?    @db.Text
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  assignments UserRole[]
+
+  @@map("roles")
+}
+
+model HospitalUser {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  hospitalId String   @map("hospital_id") @db.Uuid
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, hospitalId])
+  @@index([hospitalId, isActive])
+  @@map("hospital_users")
+}
+
+model UserRole {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  roleId           String    @map("role_id") @db.Uuid
+  assignedByUserId String?   @map("assigned_by_user_id") @db.Uuid
+  assignedAt       DateTime  @default(now()) @map("assigned_at") @db.Timestamptz(3)
+  revokedByUserId  String?   @map("revoked_by_user_id") @db.Uuid
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3)
+  user             User      @relation("RoleAssignmentUser", fields: [userId], references: [id], onDelete: Restrict)
+  role             Role      @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  assignedBy       User?     @relation("RoleAssignedBy", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+  revokedBy        User?     @relation("RoleRevokedBy", fields: [revokedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model Hospital {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String            @db.VarChar(160)
+  registrationNumber String?           @unique @map("registration_number") @db.VarChar(80)
+  phone              String?           @db.VarChar(32)
+  email              String?           @db.VarChar(254)
+  addressLine1       String?           @map("address_line_1") @db.VarChar(160)
+  addressLine2       String?           @map("address_line_2") @db.VarChar(160)
+  city               String?           @db.VarChar(100)
+  region             String?           @db.VarChar(100)
+  postalCode         String?           @map("postal_code") @db.VarChar(20)
+  countryCode        String?           @map("country_code") @db.Char(2)
+  isActive           Boolean           @default(true) @map("is_active")
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  staff              Staff[]
+  hospitalUsers      HospitalUser[]
+  donorsRegistered   Donor[]           @relation("DonorRegistrationHospital")
+  appointments       Appointment[]
+  donations          Donation[]
+  storageLocations   StorageLocation[]
+  bloodRequests      BloodRequest[]
+
+  @@map("hospitals")
+}
+
+model Staff {
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId             String              @unique @map("user_id") @db.Uuid
+  hospitalId         String              @map("hospital_id") @db.Uuid
+  employeeNumber     String              @map("employee_number") @db.VarChar(40)
+  jobTitle           String?             @map("job_title") @db.VarChar(100)
+  staffStatus        String              @default("active") @map("staff_status") @db.VarChar(20)
+  startedAt          DateTime?           @map("started_at") @db.Date
+  endedAt            DateTime?           @map("ended_at") @db.Date
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  hospital           Hospital            @relation(fields: [hospitalId], references: [id], onDelete: Restrict)
+  collectedDonations Donation[]          @relation("DonationCollector")
+  performedTests     LaboratoryTest[]    @relation("TestPerformedBy")
+  reviewedTests      LaboratoryTest[]    @relation("TestReviewedBy")
+  unitMovements      BloodUnitMovement[] @relation("MovementPerformedBy")
+  dispatchedUnits    BloodDispatch[]     @relation("BloodDispatchStaff")
+
+  @@unique([hospitalId, employeeNumber])
+  @@index([hospitalId])
+  @@map("staff")
+}
+
+model Donor {
+  id                     String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                 String        @unique @map("user_id") @db.Uuid
+  donorNumber            String        @unique @map("donor_number") @db.VarChar(40)
+  registrationHospitalId String?       @map("registration_hospital_id") @db.Uuid
+  dateOfBirth            DateTime?     @map("date_of_birth") @db.Date
+  donorStatus            String        @default("registered") @map("donor_status") @db.VarChar(20)
+  eligibilityReviewedAt  DateTime?     @map("eligibility_reviewed_at") @db.Timestamptz(3)
+  consentGivenAt         DateTime?     @map("consent_given_at") @db.Timestamptz(3)
+  consentVersion         String?       @map("consent_version") @db.VarChar(40)
+  createdAt              DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deactivatedAt          DateTime?     @map("deactivated_at") @db.Timestamptz(3)
+  user                   User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  registrationHospital   Hospital?     @relation("DonorRegistrationHospital", fields: [registrationHospitalId], references: [id], onDelete: Restrict)
+  appointments           Appointment[]
+  donations              Donation[]
+
+  @@index([registrationHospitalId])
+  @@map("donors")
+}
+
+model BloodType {
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code               String              @unique @db.VarChar(6)
+  aboGroup           String              @map("abo_group") @db.VarChar(2)
+  rhFactor           String              @map("rh_factor") @db.Char(1)
+  testResults        LaboratoryTest[]
+  donationBloodTypes DonationBloodType[]
+  bloodRequests      BloodRequest[]
+
+  @@unique([aboGroup, rhFactor])
+  @@map("blood_types")
+}
+
+model Appointment {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  donorId           String    @map("donor_id") @db.Uuid
+  hospitalId        String    @map("hospital_id") @db.Uuid
+  createdByUserId   String?   @map("created_by_user_id") @db.Uuid
+  scheduledStartAt  DateTime  @map("scheduled_start_at") @db.Timestamptz(3)
+  scheduledEndAt    DateTime  @map("scheduled_end_at") @db.Timestamptz(3)
+  appointmentStatus String    @default("booked") @map("appointment_status") @db.VarChar(20)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  donor             Donor     @relation(fields: [donorId], references: [id], onDelete: Restrict)
+  hospital          Hospital  @relation(fields: [hospitalId], references: [id], onDelete: Restrict)
+  createdBy         User?     @relation("AppointmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  donation          Donation?
+
+  @@index([donorId, scheduledStartAt])
+  @@index([hospitalId, scheduledStartAt])
+  @@map("appointments")
+}
+
+model Donation {
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  donationNumber      String             @unique @map("donation_number") @db.VarChar(40)
+  donorId             String             @map("donor_id") @db.Uuid
+  hospitalId          String             @map("hospital_id") @db.Uuid
+  collectedByStaffId  String?            @map("collected_by_staff_id") @db.Uuid
+  appointmentId       String?            @unique @map("appointment_id") @db.Uuid
+  donationStatus      String             @default("collected") @map("donation_status") @db.VarChar(20)
+  collectionStartedAt DateTime?          @map("collection_started_at") @db.Timestamptz(3)
+  collectedAt         DateTime?          @map("collected_at") @db.Timestamptz(3)
+  volumeMl            Int?               @map("volume_ml") @db.SmallInt
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  donor               Donor              @relation(fields: [donorId], references: [id], onDelete: Restrict)
+  hospital            Hospital           @relation(fields: [hospitalId], references: [id], onDelete: Restrict)
+  collectedBy         Staff?             @relation("DonationCollector", fields: [collectedByStaffId], references: [id], onDelete: Restrict)
+  appointment         Appointment?       @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  laboratoryTests     LaboratoryTest[]
+  bloodType           DonationBloodType?
+  bloodUnits          BloodUnit[]
+
+  @@index([donorId, collectedAt(sort: Desc)])
+  @@index([hospitalId, collectedAt(sort: Desc)])
+  @@map("donations")
+}
+
+model LaboratoryTest {
+  id                   String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  donationId           String             @map("donation_id") @db.Uuid
+  bloodUnitId          String?            @map("blood_unit_id") @db.Uuid
+  testType             String             @map("test_type") @db.VarChar(40)
+  attemptNo            Int                @default(1) @map("attempt_no") @db.SmallInt
+  performedByStaffId   String?            @map("performed_by_staff_id") @db.Uuid
+  reviewedByStaffId    String?            @map("reviewed_by_staff_id") @db.Uuid
+  testStatus           String             @default("pending") @map("test_status") @db.VarChar(20)
+  reviewStatus         String             @default("pending") @map("review_status") @db.VarChar(20)
+  resultCode           String?            @map("result_code") @db.VarChar(40)
+  resultBloodTypeId    String?            @map("result_blood_type_id") @db.Uuid
+  sampleCollectedAt    DateTime?          @map("sample_collected_at") @db.Timestamptz(3)
+  performedAt          DateTime?          @map("performed_at") @db.Timestamptz(3)
+  completedAt          DateTime?          @map("completed_at") @db.Timestamptz(3)
+  reviewedAt           DateTime?          @map("reviewed_at") @db.Timestamptz(3)
+  recordedAt           DateTime           @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  donation             Donation           @relation(fields: [donationId], references: [id], onDelete: Restrict)
+  bloodUnit            BloodUnit?         @relation(fields: [bloodUnitId, donationId], references: [id, donationId], onDelete: Restrict)
+  performedBy          Staff?             @relation("TestPerformedBy", fields: [performedByStaffId], references: [id], onDelete: Restrict)
+  reviewedBy           Staff?             @relation("TestReviewedBy", fields: [reviewedByStaffId], references: [id], onDelete: Restrict)
+  resultBloodType      BloodType?         @relation(fields: [resultBloodTypeId], references: [id], onDelete: Restrict)
+  verifiedDonationType DonationBloodType? @relation("VerifiedBloodType")
+
+  @@unique([donationId, testType, attemptNo])
+  @@unique([id, donationId, resultBloodTypeId])
+  @@index([bloodUnitId, testType, attemptNo])
+  @@index([donationId, testType, recordedAt(sort: Desc)])
+  @@map("laboratory_tests")
+}
+
+model DonationBloodType {
+  donationId       String         @id @map("donation_id") @db.Uuid
+  bloodTypeId      String         @map("blood_type_id") @db.Uuid
+  verifiedByTestId String         @unique @map("verified_by_test_id") @db.Uuid
+  verifiedAt       DateTime       @map("verified_at") @db.Timestamptz(3)
+  donation         Donation       @relation(fields: [donationId], references: [id], onDelete: Restrict)
+  bloodType        BloodType      @relation(fields: [bloodTypeId], references: [id], onDelete: Restrict)
+  verifiedByTest   LaboratoryTest @relation("VerifiedBloodType", fields: [verifiedByTestId, donationId, bloodTypeId], references: [id, donationId, resultBloodTypeId], onDelete: Restrict)
+
+  @@unique([verifiedByTestId, donationId, bloodTypeId])
+  @@map("donation_blood_types")
+}
+
+model StorageLocation {
+  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  hospitalId      String              @map("hospital_id") @db.Uuid
+  code            String              @db.VarChar(40)
+  name            String              @db.VarChar(100)
+  locationType    String              @map("location_type") @db.VarChar(30)
+  minTemperatureC Decimal?            @map("min_temperature_c") @db.Decimal(4, 1)
+  maxTemperatureC Decimal?            @map("max_temperature_c") @db.Decimal(4, 1)
+  isActive        Boolean             @default(true) @map("is_active")
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  hospital        Hospital            @relation(fields: [hospitalId], references: [id], onDelete: Restrict)
+  currentUnits    BloodUnit[]         @relation("CurrentUnitLocation")
+  movementsFrom   BloodUnitMovement[] @relation("MovementFromLocation")
+  movementsTo     BloodUnitMovement[] @relation("MovementToLocation")
+
+  @@unique([hospitalId, code])
+  @@index([hospitalId])
+  @@map("storage_locations")
+}
+
+model BloodUnit {
+  id                       String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  donationId               String              @map("donation_id") @db.Uuid
+  unitCode                 String              @unique @map("unit_code") @db.VarChar(60)
+  componentType            String              @map("component_type") @db.VarChar(30)
+  unitStatus               String              @default("quarantined") @map("unit_status") @db.VarChar(20)
+  collectedAt              DateTime            @map("collected_at") @db.Timestamptz(3)
+  expiresAt                DateTime            @map("expires_at") @db.Timestamptz(3)
+  currentStorageLocationId String?             @map("current_storage_location_id") @db.Uuid
+  createdAt                DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  donation                 Donation            @relation(fields: [donationId], references: [id], onDelete: Restrict)
+  currentStorageLocation   StorageLocation?    @relation("CurrentUnitLocation", fields: [currentStorageLocationId], references: [id], onDelete: Restrict)
+  allocations              Allocation[]
+  movements                BloodUnitMovement[]
+  laboratoryTests          LaboratoryTest[]
+  dispatches               BloodDispatch[]
+
+  @@unique([id, donationId])
+  @@index([unitStatus, expiresAt])
+  @@index([donationId])
+  @@map("blood_units")
+}
+
+model BloodRequest {
+  id                String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestNumber     String                      @unique @map("request_number") @db.VarChar(40)
+  hospitalId        String                      @map("hospital_id") @db.Uuid
+  requestedByUserId String                      @map("requested_by_user_id") @db.Uuid
+  bloodTypeId       String                      @map("blood_type_id") @db.Uuid
+  componentType     String                      @map("component_type") @db.VarChar(30)
+  quantityRequested Int                         @map("quantity_requested") @db.SmallInt
+  priority          String                      @default("routine") @db.VarChar(16)
+  requestStatus     String                      @default("open") @map("request_status") @db.VarChar(20)
+  requestDetails    String?                     @map("request_details") @db.VarChar(1000)
+  reviewedByUserId  String?                     @map("reviewed_by_user_id") @db.Uuid
+  reviewedAt        DateTime?                   @map("reviewed_at") @db.Timestamptz(3)
+  reviewNote        String?                     @map("review_note") @db.VarChar(1000)
+  requestedAt       DateTime                    @default(now()) @map("requested_at") @db.Timestamptz(3)
+  neededBy          DateTime?                   @map("needed_by") @db.Timestamptz(3)
+  updatedAt         DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  closedAt          DateTime?                   @map("closed_at") @db.Timestamptz(3)
+  hospital          Hospital                    @relation(fields: [hospitalId], references: [id], onDelete: Restrict)
+  requestedBy       User                        @relation("BloodRequestCreatedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  reviewedBy        User?                       @relation("BloodRequestReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  bloodType         BloodType                   @relation(fields: [bloodTypeId], references: [id], onDelete: Restrict)
+  allocations       Allocation[]
+  statusHistory     BloodRequestStatusHistory[]
+  dispatches        BloodDispatch[]
+
+  @@index([hospitalId, requestStatus, neededBy])
+  @@index([bloodTypeId, componentType, requestStatus])
+  @@map("blood_requests")
+}
+
+model BloodRequestStatusHistory {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bloodRequestId  String       @map("blood_request_id") @db.Uuid
+  changedByUserId String       @map("changed_by_user_id") @db.Uuid
+  previousStatus  String?      @map("previous_status") @db.VarChar(24)
+  newStatus       String       @map("new_status") @db.VarChar(24)
+  note            String?      @db.VarChar(1000)
+  changedAt       DateTime     @default(now()) @map("changed_at") @db.Timestamptz(3)
+  bloodRequest    BloodRequest @relation(fields: [bloodRequestId], references: [id], onDelete: Restrict)
+  changedBy       User         @relation("BloodRequestStatusHistoryActor", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([bloodRequestId, changedAt])
+  @@map("blood_request_status_history")
+}
+
+model Allocation {
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bloodRequestId    String         @map("blood_request_id") @db.Uuid
+  bloodUnitId       String         @map("blood_unit_id") @db.Uuid
+  allocatedByUserId String         @map("allocated_by_user_id") @db.Uuid
+  allocationStatus  String         @default("reserved") @map("allocation_status") @db.VarChar(20)
+  allocatedAt       DateTime       @default(now()) @map("allocated_at") @db.Timestamptz(3)
+  fulfilledAt       DateTime?      @map("fulfilled_at") @db.Timestamptz(3)
+  cancelledAt       DateTime?      @map("cancelled_at") @db.Timestamptz(3)
+  bloodRequest      BloodRequest   @relation(fields: [bloodRequestId], references: [id], onDelete: Restrict)
+  bloodUnit         BloodUnit      @relation(fields: [bloodUnitId], references: [id], onDelete: Restrict)
+  allocatedBy       User           @relation("AllocationCreatedBy", fields: [allocatedByUserId], references: [id], onDelete: Restrict)
+  dispatch          BloodDispatch?
+
+  @@unique([id, bloodRequestId, bloodUnitId])
+  @@index([bloodRequestId, allocationStatus])
+  @@map("allocations")
+}
+
+model BloodCompatibilityApproval {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  policyVersion      String   @map("policy_version") @db.VarChar(80)
+  policyDescription  String   @map("policy_description") @db.VarChar(1000)
+  reviewerName       String   @map("reviewer_name") @db.VarChar(160)
+  reviewerCredential String   @map("reviewer_credential") @db.VarChar(160)
+  reviewedAt         DateTime @map("reviewed_at") @db.Timestamptz(3)
+  recordedByUserId   String   @map("recorded_by_user_id") @db.Uuid
+  isActive           Boolean  @default(true) @map("is_active")
+  recordedAt         DateTime @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  recordedBy         User     @relation("CompatibilityApprovalRecordedBy", fields: [recordedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([isActive, reviewedAt])
+  @@map("blood_compatibility_approvals")
+}
+
+model BloodDispatch {
+  id                  String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  allocationId        String                       @unique @map("allocation_id") @db.Uuid
+  bloodRequestId      String                       @map("blood_request_id") @db.Uuid
+  bloodUnitId         String                       @map("blood_unit_id") @db.Uuid
+  dispatchedByUserId  String                       @map("dispatched_by_user_id") @db.Uuid
+  dispatchedByStaffId String                       @map("dispatched_by_staff_id") @db.Uuid
+  deliveryStatus      String                       @default("dispatched") @map("delivery_status") @db.VarChar(20)
+  dispatchedAt        DateTime                     @default(now()) @map("dispatched_at") @db.Timestamptz(3)
+  deliveredAt         DateTime?                    @map("delivered_at") @db.Timestamptz(3)
+  finalDisposition    String?                      @map("final_disposition") @db.VarChar(40)
+  allocation          Allocation                   @relation(fields: [allocationId, bloodRequestId, bloodUnitId], references: [id, bloodRequestId, bloodUnitId], onDelete: Restrict)
+  bloodRequest        BloodRequest                 @relation(fields: [bloodRequestId], references: [id], onDelete: Restrict)
+  bloodUnit           BloodUnit                    @relation(fields: [bloodUnitId], references: [id], onDelete: Restrict)
+  dispatchedBy        User                         @relation("BloodDispatchDispatchedBy", fields: [dispatchedByUserId], references: [id], onDelete: Restrict)
+  dispatchedByStaff   Staff                        @relation("BloodDispatchStaff", fields: [dispatchedByStaffId], references: [id], onDelete: Restrict)
+  statusHistory       BloodDispatchStatusHistory[]
+
+  @@unique([allocationId, bloodRequestId, bloodUnitId])
+  @@index([bloodRequestId, dispatchedAt])
+  @@index([bloodUnitId, dispatchedAt])
+  @@map("blood_dispatches")
+}
+
+model BloodDispatchStatusHistory {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bloodDispatchId  String        @map("blood_dispatch_id") @db.Uuid
+  changedByUserId  String        @map("changed_by_user_id") @db.Uuid
+  previousStatus   String?       @map("previous_status") @db.VarChar(20)
+  newStatus        String        @map("new_status") @db.VarChar(20)
+  finalDisposition String?       @map("final_disposition") @db.VarChar(40)
+  note             String?       @db.VarChar(1000)
+  changedAt        DateTime      @default(now()) @map("changed_at") @db.Timestamptz(3)
+  bloodDispatch    BloodDispatch @relation(fields: [bloodDispatchId], references: [id], onDelete: Restrict)
+  changedBy        User          @relation("BloodDispatchStatusChangeActor", fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([bloodDispatchId, changedAt])
+  @@map("blood_dispatch_status_history")
+}
+
+model BloodUnitMovement {
+  id                    String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bloodUnitId           String           @map("blood_unit_id") @db.Uuid
+  fromStorageLocationId String?          @map("from_storage_location_id") @db.Uuid
+  toStorageLocationId   String?          @map("to_storage_location_id") @db.Uuid
+  movedByStaffId        String?          @map("moved_by_staff_id") @db.Uuid
+  movedAt               DateTime         @default(now()) @map("moved_at") @db.Timestamptz(3)
+  reasonCode            String?          @map("reason_code") @db.VarChar(30)
+  bloodUnit             BloodUnit        @relation(fields: [bloodUnitId], references: [id], onDelete: Restrict)
+  fromStorageLocation   StorageLocation? @relation("MovementFromLocation", fields: [fromStorageLocationId], references: [id], onDelete: Restrict)
+  toStorageLocation     StorageLocation? @relation("MovementToLocation", fields: [toStorageLocationId], references: [id], onDelete: Restrict)
+  movedByStaff          Staff?           @relation("MovementPerformedBy", fields: [movedByStaffId], references: [id], onDelete: Restrict)
+
+  @@index([bloodUnitId, movedAt(sort: Desc)])
+  @@map("blood_unit_movements")
+}
+
+model Notification {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  notificationType String    @map("notification_type") @db.VarChar(40)
+  channel          String    @db.VarChar(16)
+  deliveryStatus   String    @default("queued") @map("delivery_status") @db.VarChar(20)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  sentAt           DateTime? @map("sent_at") @db.Timestamptz(3)
+  readAt           DateTime? @map("read_at") @db.Timestamptz(3)
+  user             User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, deliveryStatus, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId   String?  @map("actor_user_id") @db.Uuid
+  action        String   @db.VarChar(40)
+  entityType    String   @map("entity_type") @db.VarChar(50)
+  entityId      String   @map("entity_id") @db.Uuid
+  occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  requestId     String?  @map("request_id") @db.Uuid
+  changedFields String[] @default([]) @map("changed_fields")
+  metadata      Json     @default("{}") @db.JsonB
+  actor         User?    @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId, occurredAt(sort: Desc)])
+  @@index([actorUserId, occurredAt(sort: Desc)])
+  @@map("audit_logs")
+}
